@@ -18,6 +18,7 @@
 | 实验结果和结论 | §6 实验结果 |
 | 怎么扩展 / 后续方向 | §7 可拓展方向 |
 | AI 接管时的注意事项 | §8 接管指南 |
+| 详细的算法报告（LaTeX PDF） | §9 详细报告 |
 
 ---
 
@@ -48,7 +49,7 @@ Python 3.9+、numpy、scipy、matplotlib、bleak、filterpy。
 |------|-----|
 | 仓库地址 | `https://github.com/Tjfancy/ble-automotive-key-positioning` |
 | 当前分支 | `master` |
-| 最新 commit | `e00e32f`（LaTeX 报告） |
+| 最新 commit | `4d1ce2c`（RSSI LaTeX 报告） |
 | 本地路径 | `C:\Users\LiangFeng(CN-TT-U1)\Desktop\BLE\ble-automotive-key-positioning` |
 
 ### 2.1 目录结构
@@ -76,10 +77,12 @@ ble-automotive-key-positioning/
 │   └── mc_rmse_vs_M.png           # RMSE vs 阵元数
 │
 ├── docs/
-│   ├── aoa_simulation_report.md   # AoA 报告（Markdown）
-│   ├── aoa_simulation_report.tex  # AoA 报告（LaTeX 源文件）
-│   ├── aoa_simulation_report.pdf  # AoA 报告（编译后 PDF，12 页）
-│   └── resume_project_draft.md    # 简历项目描述草稿（3 版本 + 追问准备）
+│   ├── aoa_simulation_report.md       # AoA 报告（Markdown）
+│   ├── aoa_simulation_report.tex      # AoA 报告（LaTeX 源文件）
+│   ├── aoa_simulation_report.pdf      # AoA 报告（编译后 PDF，12 页）
+│   ├── rssi_positioning_report.tex    # RSSI 定位报告（LaTeX 源文件）
+│   ├── rssi_positioning_report.pdf    # RSSI 定位报告（编译后 PDF，14 页）
+│   └── resume_project_draft.md        # 简历项目描述草稿（3 版本 + 追问准备）
 │
 └── src/
     ├── subproject1_rssi/          # 子项目一
@@ -464,7 +467,7 @@ $$X = a(\theta) \cdot s + n$$
 
 - Python 3.9+
 - 已安装的依赖：numpy, scipy, matplotlib, bleak, filterpy（`pip install -r requirements.txt`）
-- LaTeX（可选，仅用于重新编译 `docs/aoa_simulation_report.pdf`）：需 `xelatex`（MiKTeX 自带 ctex 包）
+- LaTeX（可选，仅用于重新编译 `docs/` 下的两份 PDF 报告）：需 `xelatex`（MiKTeX 自带 ctex 包）
 
 ### 8.2 常见修改场景
 
@@ -491,7 +494,12 @@ python src/subproject1_rssi/03_trilateration_kalman.py
 
 ```bash
 cd docs
-xelatex -interaction=nonstopmode aoa_simulation_report.tex   # 跑两次
+# 子项目一：RSSI 定位报告
+xelatex -interaction=nonstopmode rssi_positioning_report.tex   # 跑两次
+xelatex -interaction=nonstopmode rssi_positioning_report.tex
+
+# 子项目二：AoA 报告
+xelatex -interaction=nonstopmode aoa_simulation_report.tex    # 跑两次
 xelatex -interaction=nonstopmode aoa_simulation_report.tex
 ```
 
@@ -515,4 +523,35 @@ xelatex -interaction=nonstopmode aoa_simulation_report.tex
 
 ---
 
-*最后更新：2026-08-24 | commit `e00e32f` | 本文档面向无上下文的 AI 接管者*
+## 9. 详细报告（LaTeX PDF）
+
+两个子项目各有一份独立的详细报告，包含完整的公式推导、算法步骤、实验数据分析和可拓展方向。适合面试前系统复习或直接打印。
+
+| 报告 | 源文件 | 编译后 PDF | 页数 |
+|------|--------|-----------|------|
+| 子项目一：RSSI 定位与滤波 | `docs/rssi_positioning_report.tex` | `docs/rssi_positioning_report.pdf` | 14 页 |
+| 子项目二：BLE AoA 算法仿真 | `docs/aoa_simulation_report.tex` | `docs/aoa_simulation_report.pdf` | 12 页 |
+
+### 报告覆盖内容
+
+**子项目一报告**（9 章）：
+数据采集 → 路径损耗模型（A, n 拟合）→ 三边定位（最小二乘）→ 卡尔曼滤波（1D 恒速模型 + Q/R 调参）→ 实验结果（轨迹/CDF/误差 vs 时间）→ 可拓展方向 → 代码导航
+
+**子项目二报告**（7 章）：
+信号模型（导向矢量 + SNR 推导）→ MUSIC 算法（噪声子空间正交性）→ ESPRIT 算法（旋转不变性）→ 蒙特卡洛评估（27 组实验 + RMSE 曲线）→ 可拓展方向 → 代码导航
+
+### 重新编译
+
+```bash
+cd docs
+xelatex -interaction=nonstopmode rssi_positioning_report.tex   # 跑两次
+xelatex -interaction=nonstopmode rssi_positioning_report.tex
+xelatex -interaction=nonstopmode aoa_simulation_report.tex    # 跑两次
+xelatex -interaction=nonstopmode aoa_simulation_report.tex
+```
+
+> 注意：图片路径在 `../results/`（LaTeX 在 docs/ 目录编译），已内置。必须用 `xelatex`（不能用 `pdflatex`），因为报告是中文的。
+
+---
+
+*最后更新：2026-08-24 | commit `4d1ce2c` | 本文档面向无上下文的 AI 接管者*
