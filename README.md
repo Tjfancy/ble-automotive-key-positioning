@@ -163,12 +163,27 @@ $$a(\theta) = [1, e^{j\pi\sin\theta}, e^{j2\pi\sin\theta}, \ldots, e^{j(M-1)\pi\
 
 ---
 
-## 运行方式
+## 快速开始（5 秒跑通整个项目）
+
+> 无需 BLE 硬件，仓库已包含预生成数据，克隆后直接跑：
 
 ```bash
-# 安装依赖
+# 1. 克隆
+git clone https://github.com/Tjfancy/ble-automotive-key-positioning.git
+cd ble-automotive-key-positioning
+
+# 2. 安装依赖（pip 慢时可换国内镜像：-i https://pypi.tuna.tsinghua.edu.cn/simple）
 pip install -r requirements.txt
 
+# 3. 一键运行全部流程（跳过耗时蒙特卡洛用 --skip-mc）
+python run_all.py
+```
+
+> 跑完后所有图表在 `results/` 目录，数据在 `data/` 目录。
+
+## 单步运行
+
+```bash
 # 子项目一：RSSI 定位
 python src/subproject1_rssi/01_collect_rssi.py --synthetic --distance 1.0 --n-samples 80
 python src/subproject1_rssi/02_path_loss_fit.py
@@ -180,7 +195,10 @@ python src/subproject2_aoa/02_esprit.py
 python src/subproject2_aoa/03_monte_carlo.py
 ```
 
-> 注：Windows 上若遇 asyncio 策略报错，脚本已内置 `WindowsSelectorEventLoopPolicy` 修复。
+> 注：
+> - `01_collect_rssi.py` 支持 `--real`（真实 BLE 扫描，需手机 nRF Connect 广播）和 `--synthetic`（合成数据，无需硬件）。
+> - Windows 上若遇 asyncio 策略报错，脚本已内置 `WindowsSelectorEventLoopPolicy` 修复。
+> - pip 安装慢时可指定清华源：`pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple`
 
 ---
 
