@@ -1,0 +1,592 @@
+%===============================================================================
+% BLE AoA 算法仿真报告 — LaTeX 源文件
+% 子项目二：纯软件仿真，无需硬件
+% 编译: pdflatex -interaction=nonstopmode aoa_simulation_report.tex
+%===============================================================================
+\documentclass[11pt,a4paper]{article}
+
+%---------------------------------------------------------------------------
+% 宏包（ctex 支持中文，用 xelatex 编译）
+%---------------------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{ctex}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!60!black,
+}
+
+% 代码块样式
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!70!black}\bfseries,
+    stringstyle=\color{green!50!black},
+    commentstyle=\color{gray!60}\itshape,
+    numberstyle=\tiny\color{gray},
+    numbers=left,
+    breaklines=true,
+    frame=single,
+    framerule=0.3pt,
+    rulecolor=\color{gray!30},
+    backgroundcolor=\color{gray!5},
+}
+
+% 自定义命令
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\param}[1]{\textit{#1}}
+\newcommand{\dB}{\,\text{dB}}
+
+% 页眉页脚
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small BLE AoA 算法仿真报告}
+\fancyhead[R]{\small 子项目二}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+%---------------------------------------------------------------------------
+% 文档开始
+%---------------------------------------------------------------------------
+\begin{document}
+
+%===============================================================================
+% 封面
+%===============================================================================
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries BLE AoA 算法仿真报告\par}
+\vspace{0.5cm}
+{\Large 子项目二：纯软件仿真\par}
+\vspace{1cm}
+{\large 汽车数字钥匙定位技术原型与算法评估\par}
+\vspace{2cm}
+\begin{abstract}
+本报告面向汽车数字钥匙场景中的 \textbf{BLE AoA（到达角）} 测角技术。通过均匀线阵（ULA）仿真，复现经典高分辨率测角算法 MUSIC 与 ESPRIT，系统量化 SNR、阵元数对测角精度的影响。全文覆盖信号模型、算法原理、蒙特卡洛实验与结果分析，并提供可拓展方向。
+\end{abstract}
+\vspace{2cm}
+{\small 仓库：\url{https://github.com/Tjfancy/ble-automotive-key-positioning}\par}
+{\small 日期：2026 年 8 月\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+%===============================================================================
+% 第一章 概述
+%===============================================================================
+\section{概述}
+
+本报告面向汽车数字钥匙场景中的 \textbf{BLE AoA（Angle of Arrival，到达角）} 测角技术。通过均匀线阵（ULA）仿真，复现经典高分辨率测角算法 MUSIC 与 ESPRIT，系统量化 SNR、阵元数对测角精度的影响。
+
+\subsection*{技术栈}
+Python~3.9+、numpy、scipy、matplotlib。无需任何硬件。
+
+\subsection*{项目结构}
+
+\begin{table}[H]
+\centering
+\caption{子项目二脚本一览}
+\label{tab:scripts}
+\begin{tabular}{llp{7cm}}
+\toprule
+\textbf{脚本} & \textbf{作用} \\
+\midrule
+\code{01\_signal\_model\_music.py} & ULA 信号模型 + MUSIC 算法 \\
+\code{02\_esprit.py} & ESPRIT 算法 \\
+\code{03\_monte\_carlo.py} & 蒙特卡洛评估（SNR $\times$ 阵元数） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%===============================================================================
+% 第二章 信号模型
+%===============================================================================
+\section{信号模型}
+
+\subsection{物理场景}
+
+\begin{figure}[H]
+\centering
+% ASCII 示意图
+\begin{verbatim}
+                    theta = 30 deg
+                       ^
+                      /|
+                     / |
+                    /  |
+         +-------+  /   |  plane wave
+         |  o  o  o  o  |  <- M elements, d = lambda/2
+         +-------+
+    <----- d ----->
+\end{verbatim}
+\caption{均匀线阵远场入射示意图}
+\label{fig:ula}
+\end{figure}
+
+\begin{itemize}
+    \item 均匀线阵（ULA），M 个全向阵元
+    \item 阵元间距 $d = \lambda/2$（避免栅瓣，保证角度无模糊范围 $\pm 90^\circ$）
+    \item 载波频率 2.4~GHz（BLE ISM 频段），波长 $\lambda \approx 12.5$~cm
+    \item 远场单源入射，来波方向 $\theta$（与阵法线的夹角）
+\end{itemize}
+
+\subsection{导向矢量}
+
+相邻阵元间的相位差由波程差决定：
+\begin{equation}
+\Delta\phi = \frac{2\pi}{\lambda} \cdot d \cdot \sin\theta
+           = \frac{2\pi}{\lambda} \cdot \frac{\lambda}{2} \cdot \sin\theta
+           = \pi \sin\theta
+\end{equation}
+
+因此导向矢量为：
+\begin{equation}
+a(\theta) = \begin{bmatrix}
+1 \\
+e^{j\pi\sin\theta} \\
+e^{j2\pi\sin\theta} \\
+\vdots \\
+e^{j(M-1)\pi\sin\theta}
+\end{bmatrix}
+\end{equation}
+
+\textbf{物理意义}：第 $m$ 个阵元相对于参考阵元（第 0 个）的相位滞后为 $m\pi\sin\theta$，这是阵列信号处理的基石。
+
+\subsection{接收信号}
+
+对于 $K$ 个快照（采样时刻），接收数据矩阵为：
+\begin{equation}
+X = a(\theta) \cdot s + n
+\end{equation}
+
+\begin{itemize}
+    \item $X$：$(M \times K)$ 复数矩阵，$M$ 个阵元各采样 $K$ 次
+    \item $s$：$(K,)$ 复数源信号，功率 $E[|s|^2] = 1$（单位功率假设）
+    \item $n$：$(M \times K)$ 复高斯白噪声，$n \sim \mathcal{CN}(0, \sigma^2 I)$
+\end{itemize}
+
+\textbf{SNR 定义}：
+\begin{equation}
+\text{SNR (dB)} = 10 \log_{10}\left(\frac{P_s}{P_n}\right)
+                = 10 \log_{10}\left(\frac{1}{\sigma^2}\right)
+\end{equation}
+所以噪声功率 $\sigma^2 = 10^{-\text{SNR}/10}$。
+
+\subsection{参数含义汇总}
+
+\begin{table}[H]
+\centering
+\caption{信号模型参数及其影响}
+\label{tab:params}
+\begin{tabular}{llll}
+\toprule
+\textbf{参数} & \textbf{含义} & \textbf{示例值} & \textbf{影响} \\
+\midrule
+$M$ & 阵元数 & 4, 8, 16 & 越多 $\to$ 阵列孔径越大 $\to$ 分辨率越高 $\to$ 精度越高 \\
+$\theta_{\text{true}}$ & 真实入射角 & $30^\circ$ & 待估计量 \\
+$K$ & 快照数 & 200 & 越多 $\to$ 协方差估计越准 $\to$ 精度越高 \\
+SNR & 信噪比 & $-10$--$30$~dB & 越高 $\to$ 噪声越小 $\to$ 精度越高 \\
+$d/\lambda$ & 阵元间距/波长 & $0.5$ ($\lambda/2$) & 避免栅瓣，保证 $\pm 90^\circ$ 无模糊 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%===============================================================================
+% 第三章 算法原理
+%===============================================================================
+\section{算法原理}
+
+\subsection{前置：协方差矩阵与特征分解}
+
+接收数据的协方差矩阵：
+\begin{equation}
+R = \frac{1}{K} X X^H
+\end{equation}
+
+对 $R$ 做特征分解：
+\begin{equation}
+R = V \Lambda V^H = \sum_{i=1}^{M} \lambda_i v_i v_i^H
+\end{equation}
+
+特征值满足 $\lambda_1 \ge \lambda_2 \ge \cdots \ge \lambda_M \ge 0$。
+
+\textbf{关键性质}：对于 $p$ 个信源，前 $p$ 个大特征值对应\textbf{信号子空间}，后 $M-p$ 个小特征值对应\textbf{噪声子空间}：
+\begin{align}
+\operatorname{span}\{v_1, \ldots, v_p\} &= \operatorname{span}\{a(\theta_1), \ldots, a(\theta_p)\} \\
+\operatorname{span}\{v_{p+1}, \ldots, v_M\} &\perp \operatorname{span}\{a(\theta_1), \ldots, a(\theta_p)\}
+\end{align}
+
+即 \textbf{噪声子空间与信号子空间正交}——这是 MUSIC 和 ESPRIT 的共同理论基础。
+
+\subsection{MUSIC 算法}
+
+\textbf{全称}：MUltiple SIgnal Classification（多重信号分类）
+
+\textbf{核心思想}：利用噪声子空间与导向矢量的正交性。
+
+\textbf{步骤}：
+\begin{enumerate}
+    \item 计算 $R = \frac{1}{K} X X^H$
+    \item 特征分解 $R$，特征值降序排列
+    \item 噪声子空间 $U_n = [v_{p+1}, \ldots, v_M]$ \hfill $(M \times (M-p))$
+    \item MUSIC 空间谱：
+    \begin{equation}
+    P_{\text{MUSIC}}(\theta) = \frac{1}{a^H(\theta) \cdot U_n \cdot U_n^H \cdot a(\theta)}
+    \end{equation}
+    \item 在 $\theta \in [-90^\circ, 90^\circ]$ 搜索谱峰 $\to$ 角度估计
+\end{enumerate}
+
+\textbf{物理意义}：
+\begin{itemize}
+    \item 当 $a(\theta)$ 指向真实来波方向时，$a(\theta)$ 完全落在信号子空间内，与噪声子空间正交
+    \item 此时分母 $a^H U_n U_n^H a \to 0$，谱值 $P_{\text{MUSIC}}(\theta) \to \infty$（出现尖峰）
+    \item 当 $a(\theta)$ 不指向任何真实方向时，分母较大，谱值很小
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{MUSIC 特点}
+\begin{tabular}{p{6cm}p{6cm}}
+\toprule
+\textbf{优点} & \textbf{缺点} \\
+\midrule
+分辨率高，可分辨相干信源（需预处理） & 需要全角度网格搜索，计算量大 $O(M^2 \cdot N_\theta)$ \\
+基于噪声子空间，精度高 & 对信源数 $p$ 敏感（需已知或估计 $p$） \\
+经典算法，理论成熟 & 网格分辨率限制精度（$0.5^\circ$ 网格 $\to$ 极限精度） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{本项目实现}：网格步长 $0.5^\circ$，搜索范围 $[-90^\circ, 90^\circ]$。
+
+\subsection{ESPRIT 算法}
+
+\textbf{全称}：Estimation of Signal Parameters via Rotational Invariance Techniques
+
+\textbf{核心思想}：利用 ULA 的平移不变性，不需要全角度搜索。
+
+\textbf{步骤}：
+\begin{enumerate}
+    \item 计算 $R$，特征分解，取信号子空间 $E_s = [v_1, \ldots, v_p]$ \hfill $(M \times p)$
+    \item 子阵划分：
+    \begin{align}
+    E_{s1} &= E_s[0:M-1, :] \quad \text{前 } M-1 \text{ 行} \\
+    E_{s2} &= E_s[1:M, :] \quad \text{后 } M-1 \text{ 行}
+    \end{align}
+    \item 存在 $p \times p$ 矩阵 $\Psi$ 满足：$E_{s2} = E_{s1} \cdot \Psi$ \\
+    求解：$\Psi = \text{pinv}(E_{s1}) \cdot E_{s2}$
+    \item 特征分解 $\Psi$，特征值 $\lambda_k = \exp(j \cdot \pi \cdot \sin\theta_k)$
+    \item 反解：$\theta_k = \arcsin(\text{angle}(\lambda_k) / \pi)$
+\end{enumerate}
+
+\textbf{物理意义}：
+\begin{itemize}
+    \item ULA 的前 $M-1$ 个阵元和后 $M-1$ 个阵元接收同一信号，仅相差一个相位旋转
+    \item 这个相位旋转 $= \pi\sin\theta$，直接编码了入射角信息
+    \item ESPRIT 把这个几何关系转化为代数特征值问题，直接求解
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{ESPRIT 特点}
+\begin{tabular}{p{6cm}p{6cm}}
+\toprule
+\textbf{优点} & \textbf{缺点} \\
+\midrule
+无需角度搜索，计算量小 $O(M^3)$ & 对信源数 $p$ 敏感 \\
+代数求解，无网格分辨率限制 & 低 SNR 时稳定性略逊 MUSIC \\
+适合实时系统 & 子阵划分损失 1 个阵元自由度 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{MUSIC vs ESPRIT 对比}
+
+\begin{table}[H]
+\centering
+\caption{MUSIC 与 ESPRIT 对比}
+\label{tab:music_vs_esprit}
+\begin{tabular}{lll}
+\toprule
+\textbf{维度} & \textbf{MUSIC} & \textbf{ESPRIT} \\
+\midrule
+精度（低 SNR） & 更好（噪声子空间约束强） & 略逊 \\
+精度（高 SNR） & 受网格分辨率限制 & 无网格限制，理论上更优 \\
+计算量 & $O(M^2 \cdot N_\theta)$ 需搜索 & $O(M^3)$ 直接求解 \\
+实现复杂度 & 中等 & 较简单 \\
+适用场景 & 离线分析、高精度 & 实时系统、嵌入式 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%===============================================================================
+% 第四章 实验与结果
+%===============================================================================
+\section{实验与结果}
+
+\subsection{单场景验证}
+
+\textbf{条件}：$M=8$，$K=200$，SNR = 10~dB，$\theta_{\text{true}} = 30^\circ$
+
+\begin{table}[H]
+\centering
+\caption{单场景角度估计结果}
+\begin{tabular}{lcc}
+\toprule
+\textbf{算法} & \textbf{估计角度} & \textbf{误差} \\
+\midrule
+MUSIC & $30.000^\circ$ & $0.000^\circ$ \\
+ESPRIT & $30.006^\circ$ & $+0.006^\circ$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{结论}：两个算法在高 SNR 下都能准确估计角度，验证了实现的正确性。
+
+\textbf{输出图表}：\code{results/music\_spectrum.png}（MUSIC 空间谱，$30^\circ$ 处有尖锐谱峰）
+
+\subsection{蒙特卡洛实验设计}
+
+\textbf{固定参数}：$\theta_{\text{true}} = 30^\circ$，$K = 200$
+
+\textbf{扫描参数}：
+
+\begin{table}[H]
+\centering
+\caption{蒙特卡洛实验参数}
+\begin{tabular}{ll}
+\toprule
+\textbf{参数} & \textbf{取值} \\
+\midrule
+SNR & $-10$, $-5$, $0$, $5$, $10$, $15$, $20$, $25$, $30$~dB \\
+$M$ & $4$, $8$, $16$ \\
+每组试验次数 & $50$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+共 $9 \times 3 = 27$ 组参数组合，每组 50 次独立试验。
+
+\textbf{评估指标}：RMSE（均方根误差）
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^{N}(\hat{\theta}_i - \theta_{\text{true}})^2}
+\end{equation}
+
+\subsection{结果分析}
+
+\subsubsection*{RMSE vs SNR（固定 M）}
+
+\begin{table}[H]
+\centering
+\caption{RMSE vs SNR（单位：度）}
+\label{tab:rmse_snr}
+\begin{tabular}{cccccc}
+\toprule
+$M$ & SNR=$-10$ & SNR=$0$ & SNR=$10$ & SNR=$30$ \\
+\midrule
+$4$ (MUSIC) & $2.74^\circ$ & $0.53^\circ$ & $0.17^\circ$ & $0.00^\circ$ \\
+$4$ (ESPRIT) & $3.64^\circ$ & $0.53^\circ$ & $0.16^\circ$ & $0.02^\circ$ \\
+$8$ (MUSIC) & $0.78^\circ$ & $0.14^\circ$ & $0.00^\circ$ & $0.00^\circ$ \\
+$8$ (ESPRIT) & $1.18^\circ$ & $0.19^\circ$ & $0.05^\circ$ & $0.01^\circ$ \\
+$16$ (MUSIC) & $0.31^\circ$ & $0.00^\circ$ & $0.00^\circ$ & $0.00^\circ$ \\
+$16$ (ESPRIT) & $0.50^\circ$ & $0.11^\circ$ & $0.04^\circ$ & $0.00^\circ$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{规律一：SNR 提升显著改善精度}
+
+从 $-10$~dB 到 $0$~dB，RMSE 急剧下降（噪声主导 $\to$ 信号主导）。$>10$~dB 后趋于饱和（受限于快照数 $K$ 和网格分辨率）。这是阵列信号处理的典型特征：存在\textbf{阈值效应}。
+
+\textbf{规律二：MUSIC 在低 SNR 下优于 ESPRIT}
+
+在 $-10$~dB 时，MUSIC 的 RMSE 明显小于 ESPRIT（如 $M=4$：$2.74^\circ$ vs $3.64^\circ$）。原因：MUSIC 利用了完整的噪声子空间约束，在低 SNR 时更稳健。高 SNR 时两者接近（MUSIC 受 $0.5^\circ$ 网格分辨率限制出现 $0.00^\circ$ 假象）。
+
+\textbf{规律三：阵元数越多精度越高}
+
+$M$ 从 $4 \to 8 \to 16$，低 SNR 下精度提升约 9 倍（$2.74^\circ \to 0.31^\circ$）。物理原因：阵元数越多 $\to$ 阵列孔径越大 $\to$ 角度分辨率越高 $\to$ 波束越窄。这是实际部署的核心结论：\textbf{增加天线数量是提升 AoA 精度最有效的手段}。
+
+\subsubsection*{RMSE vs M（固定 SNR）}
+
+\begin{itemize}
+    \item SNR = $-10$~dB 时，$M=4 \to 16$ 使 MUSIC RMSE 从 $2.74^\circ$ 降至 $0.31^\circ$（改善 89\%）
+    \item SNR = $30$~dB 时，各 $M$ 下 RMSE 均接近 0（高 SNR 下阵元数不再是瓶颈）
+    \item 曲线随 $M$ 增加呈递减趋势，符合阵列孔径理论
+\end{itemize}
+
+\textbf{输出图表}：
+
+\begin{table}[H]
+\centering
+\caption{输出图表清单}
+\begin{tabular}{ll}
+\toprule
+\textbf{图表} & \textbf{文件} \\
+\midrule
+RMSE vs SNR（6 条曲线） & \code{results/mc\_rmse\_vs\_snr.png} \\
+RMSE vs M（多 SNR 曲线） & \code{results/mc\_rmse\_vs\_M.png} \\
+MUSIC 空间谱 & \code{results/music\_spectrum.png} \\
+原始数据 & \code{data/mc\_results.npz} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{关键结论（面试可直接讲）}
+
+\begin{enumerate}
+    \item \textbf{SNR 是精度的硬约束}：低 SNR（$<0$~dB）下测角误差大，工程上需保证足够的信号功率
+    \item \textbf{阵元数是性价比最高的改进手段}：$M$ 加倍，低 SNR 下精度约提升一倍
+    \item \textbf{MUSIC 稳、ESPRIT 快}：低 SNR 选 MUSIC，实时系统选 ESPRIT
+    \item \textbf{快照数 $K$ 同样重要}：$K$ 越多协方差估计越准确，但增加采集时间
+\end{enumerate}
+
+%===============================================================================
+% 第五章 可拓展方向
+%===============================================================================
+\section{可拓展方向}
+
+\subsection{算法层面}
+
+\begin{table}[H]
+\centering
+\caption{算法拓展方向}
+\small
+\begin{tabular}{lp{8.5cm}}
+\toprule
+\textbf{方向} & \textbf{说明} \\
+\midrule
+多信源估计（$p > 1$） & 目前只做了 $p=1$。扩展到 $p>1$ 需要解决信源数估计（AIC/MDL 准则）和多谱峰配对问题 \\
+相干信源 & MUSIC 对相干信源失效，需空间平滑（SS-MUSIC）或最大似然（ML）方法 \\
+TLS-ESPRIT & 总最小二乘版本的 ESPRIT，比 LS-ESPRIT 在低 SNR 下更稳健 \\
+2D AoA & 均匀圆阵（UCA）或均匀面阵（URA）可估计方位角 + 仰角，更贴近实际车载天线布局 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{信号模型层面}
+
+\begin{table}[H]
+\centering
+\caption{信号模型拓展方向}
+\small
+\begin{tabular}{lp{8.5cm}}
+\toprule
+\textbf{方向} & \textbf{说明} \\
+\midrule
+多径效应 & 实际车载环境存在反射，信号模型从单径扩展到多径（Multipath） \\
+阵列校准 & 实际阵元间存在幅相不一致性，需加入阵列流形误差校准 \\
+互耦效应 & 密集阵元间的电磁互耦，影响导向矢量精度 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{系统融合层面}
+
+\begin{table}[H]
+\centering
+\caption{系统融合拓展方向}
+\small
+\begin{tabular}{lp{8.5cm}}
+\toprule
+\textbf{方向} & \textbf{说明} \\
+\midrule
+RSSI + AoA 融合 & 用 RSSI 做粗定位、AoA 做精测角，EKF 融合可提升鲁棒性 \\
+与 UWB 对比 & 数字钥匙场景中 UWB 精度更高但成本高，BLE AoA 是成本与精度的折中 \\
+安全扩展 & AoA 的距离估计可用于抗中继攻击（Relay Attack），是数字钥匙安全的核心议题 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{工程实现层面}
+
+\begin{table}[H]
+\centering
+\caption{工程实现拓展方向}
+\small
+\begin{tabular}{lp{8.5cm}}
+\toprule
+\textbf{方向} & \textbf{说明} \\
+\midrule
+真实硬件采集 & nRF53/54 + QM33110 天线阵列，采集 I/Q 数据跑真实 AoA 算法 \\
+嵌入式部署 & 将 MUSIC/ESPRIT 移植到 MCU，评估计算资源消耗 \\
+实时性优化 & ESPRIT 适合实时，可进一步优化特征分解的数值稳定性 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%===============================================================================
+% 第六章 代码导航
+%===============================================================================
+\section{代码导航}
+
+\begin{verbatim}
+src/subproject2_aoa/
+|-- 01_signal_model_music.py
+|   |-- steering_vector()     # 导向矢量 a(theta)
+|   |-- generate_signal()     # 生成 X = a*s + n
+|   |-- music_spectrum()      # MUSIC 算法
+|   `-- main()                # 单场景验证 + 绘图
+|
+|-- 02_esprit.py
+|   |-- esprit_estimate()     # ESPRIT 算法
+|   `-- main()                # 单场景验证 + 50 trials 统计
+|
+`-- 03_monte_carlo.py
+    |-- run_monte_carlo()     # 27 组实验
+    |-- plot_rmse_vs_snr()    # RMSE vs SNR 图
+    `-- plot_rmse_vs_M()      # RMSE vs M 图
+\end{verbatim}
+
+%===============================================================================
+% 第七章 运行方式
+%===============================================================================
+\section{运行方式}
+
+\begin{lstlisting}[language=bash, caption={一键运行}]
+# 一键运行全部（含蒙特卡洛）
+python run_all.py
+
+# 快速验证（跳过蒙特卡洛）
+python run_all.py --skip-mc
+
+# 单步运行
+python src/subproject2_aoa/01_signal_model_music.py
+python src/subproject2_aoa/02_esprit.py
+python src/subproject2_aoa/03_monte_carlo.py
+\end{lstlisting}
+
+%===============================================================================
+% 参考
+%===============================================================================
+\newpage
+\section*{参考资源}
+\begin{itemize}
+    \item 仓库：\url{https://github.com/Tjfancy/ble-automotive-key-positioning}
+    \item Schmidt, R. O. (1986). \emph{Multiple signal classification algorithm}. IEEE Trans. ASSP
+    \item Roy, R. \& Kailath, T. (1989). \emph{ESPRIT---a new signal subspace approach}. IEEE Trans. ASSP
+    \item Weiss, A. J. \& Weinstein, E. (1985). \emph{A relationship between the MUSIC and ML estimates}. IEEE Trans. ASSP
+\end{itemize}
+
+\vfill
+\begin{center}
+\small \textcolor{gray}{报告生成于 2026 年 8 月 | BLE 汽车数字钥匙定位技术原型与算法评估}
+\end{center}
+
+\end{document}
